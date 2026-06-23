@@ -1,0 +1,137 @@
+{
+  "design_request": {
+    "subject_domain": "English",
+    "topic": "reading comprehension (argument/evidence)",
+    "grade_level": 9,
+    "duration_minutes": 40,
+    "learning_objectives": [
+      "reading comprehension",
+      "evidence-based interpretation",
+      "critical literacy"
+    ],
+    "learner_profile": "mixed-ability Grade 9 class, three levels",
+    "available_technologies": [
+      "DeepSeek"
+    ],
+    "ethical_constraints": [
+      "no student personal data",
+      "teacher-facing AI use only",
+      "no direct copying of AI output"
+    ]
+  },
+  "tracelog": [
+    {
+      "step": "T0",
+      "actor": "orchestrator",
+      "action": "normalize_input",
+      "schema_status": "valid",
+      "detail": "{\"subject_domain\": \"English\", \"topic\": \"reading comprehension (argument/evidence)\", \"grade_level\": 9, \"duration_minutes\": 40, \"learning_objectives\": [\"reading comprehension\", \"evidence-based interpretation\", \"critical literacy\"], \"learner_profile\": \"mixed-ability Grade 9 class, three levels\", \"available_technologies\": [\"DeepSeek\"], \"ethical_constraints\": [\"no student personal data\", \"teacher-facing AI use only\", \"no direct copying of AI output\"]}",
+      "repair_action": ""
+    },
+    {
+      "step": "T1",
+      "actor": "content_knowledge",
+      "action": "agent_call",
+      "schema_status": "valid",
+      "detail": "content_knowledge output accepted",
+      "repair_action": ""
+    },
+    {
+      "step": "T2",
+      "actor": "pedagogy_design",
+      "action": "agent_call",
+      "schema_status": "valid",
+      "detail": "pedagogy_design output accepted",
+      "repair_action": ""
+    },
+    {
+      "step": "T3",
+      "actor": "technology_affordance",
+      "action": "agent_call",
+      "schema_status": "valid",
+      "detail": "technology_affordance output accepted",
+      "repair_action": ""
+    },
+    {
+      "step": "T4",
+      "actor": "tpack_integration",
+      "action": "agent_call",
+      "schema_status": "valid_with_conflict",
+      "detail": "While-reading annotation (15m) + post-reading discussion (10m) risks exceeding the 40-minute constraint.",
+      "repair_action": "conflict reroute -> pedagogy_design"
+    },
+    {
+      "step": "T5",
+      "actor": "pedagogy_design",
+      "action": "agent_call",
+      "schema_status": "valid",
+      "detail": "pedagogy_design output accepted",
+      "repair_action": ""
+    },
+    {
+      "step": "T6",
+      "actor": "ethical_verification",
+      "action": "verification",
+      "schema_status": "valid",
+      "detail": "5 issues; 2 high/critical",
+      "repair_action": ""
+    }
+  ],
+  "schema_validation_status": {
+    "content_knowledge": "valid",
+    "pedagogy_design": "valid",
+    "technology_affordance": "valid",
+    "tpack_integration": "valid"
+  },
+  "conflict_set": [
+    {
+      "type": "timing",
+      "detail": "While-reading annotation (15m) + post-reading discussion (10m) risks exceeding the 40-minute constraint.",
+      "repair_agent": "pedagogy_design"
+    }
+  ],
+  "verification_issues": [
+    {
+      "category": "privacy",
+      "severity": "low",
+      "repair_agent": "none",
+      "teacher_action": "No student data entered; ok."
+    },
+    {
+      "category": "hallucination_risk",
+      "severity": "medium",
+      "repair_agent": "content_knowledge",
+      "teacher_action": "Verify AI-drafted interpretations against the text."
+    },
+    {
+      "category": "over_reliance",
+      "severity": "medium",
+      "repair_agent": "technology_affordance",
+      "teacher_action": "Do not copy AI explanations into teacher talk verbatim."
+    },
+    {
+      "category": "unverified_interpretation",
+      "severity": "high",
+      "repair_agent": "content_knowledge",
+      "teacher_action": "Complete a Text Verification Record before enactment."
+    },
+    {
+      "category": "weak_learner_adaptation",
+      "severity": "high",
+      "repair_agent": "pedagogy_design",
+      "teacher_action": "Calibrate scaffolds to the actual learner profile."
+    }
+  ],
+  "teacher_oversight_flags": [
+    {
+      "category": "unverified_interpretation",
+      "teacher_action": "Complete a Text Verification Record before enactment."
+    },
+    {
+      "category": "weak_learner_adaptation",
+      "teacher_action": "Calibrate scaffolds to the actual learner profile."
+    }
+  ],
+  "verification_status": "human_review_required",
+  "total_agent_calls": 6
+}
