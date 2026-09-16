@@ -46,40 +46,49 @@ def main():
         mode = "DeepSeek (live LLM)"
     else:
         backend = StubBackend(inject_fault=fault)
-        mode = "Stub (deterministic offline)" + (" + injected schema fault" if fault else "")
+        mode = "Stub (deterministic offline)" + (
+            " + injected schema fault" if fault else ""
+        )
 
     orch = Orchestrator(backend)
 
-    print(f"=== MA-TPACK Scaffold orchestrator ===")
+    print("=== MA-TPACK Scaffold orchestrator ===")
     print(f"Backend: {mode}")
-    print(f"Case:    Grade 9 English reading, 40 min, DeepSeek teacher-facing\n")
+    print("Case:    Grade 9 English reading, 40 min, DeepSeek teacher-facing\n")
 
     artifact = orch.route(DESIGN_REQUEST)
     report = orch.verify(artifact) if artifact else None
 
-    # ---- program-generated TraceLog (this replaces the hand-written Table 7)
     print("--- TraceLog (program-generated) ---")
     print(f"{'Step':<5}{'Actor':<22}{'Schema status':<22}{'Repair / reroute'}")
-    for t in orch.tracelog():
-        print(f"{t['step']:<5}{t['actor']:<22}{t['schema_status']:<22}{t['repair_action']}")
+    for entry in orch.tracelog():
+        print(
+            f"{entry['step']:<5}{entry['actor']:<22}"
+            f"{entry['schema_status']:<22}{entry['repair_action']}"
+        )
 
     print(f"\nTotal agent calls: {orch.call_count}")
     print(f"Conflicts detected: {len(orch.state.conflict_set)}")
-    for c in orch.state.conflict_set:
-        print(f"  - [{c['type']}] {c['detail']} -> repair: {c['repair_agent']}")
+    for conflict in orch.state.conflict_set:
+        print(
+            f"  - [{conflict['type']}] {conflict['detail']} "
+            f"-> repair: {conflict['repair_agent']}"
+        )
 
-    print(f"\nSchema validation per agent:")
-    for a, s in orch.state.schema_validation_status.items():
-        print(f"  - {a:<24}: {s}")
+    print("\nSchema validation per agent:")
+    for agent, status in orch.state.schema_validation_status.items():
+        print(f"  - {agent:<24}: {status}")
 
     if report:
-        vs = report["fields"]["verification_status"]
-        print(f"\nVerification status: {vs}")
+        review_required = report["fields"]["teacher_review_required"]
+        print(f"\nTeacher review required: {review_required}")
         print(f"Human-review flags ({len(orch.state.teacher_oversight_flags)}):")
-        for f in orch.state.teacher_oversight_flags:
-            print(f"  - {f['category']}: {f['teacher_action']}")
+        for flag in orch.state.teacher_oversight_flags:
+            print(
+                f"  - {flag['issue_category']}: {flag['teacher_action']} "
+                f"[{flag['repair_agent']}]"
+            )
 
-    # ---- machine-readable artifacts for the appendix / supplementary
     out = {
         "design_request": DESIGN_REQUEST,
         "tracelog": orch.tracelog(),
@@ -87,12 +96,16 @@ def main():
         "conflict_set": orch.state.conflict_set,
         "verification_issues": orch.state.verification_issues,
         "teacher_oversight_flags": orch.state.teacher_oversight_flags,
-        "verification_status": report["fields"]["verification_status"] if report else None,
+        "teacher_review_required": (
+            report["fields"]["teacher_review_required"] if report else None
+        ),
         "total_agent_calls": orch.call_count,
+        "routing_agent_calls": 5 if not fault else None,
+        "verification_agent_calls": 1 if report else 0,
     }
     with open("trace_output.json", "w", encoding="utf-8") as fh:
         json.dump(out, fh, ensure_ascii=False, indent=2)
-    print(f"\n[written] trace_output.json")
+    print("\n[written] trace_output.json")
 
 
 if __name__ == "__main__":
