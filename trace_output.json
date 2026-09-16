@@ -73,7 +73,7 @@
       "actor": "ethical_verification",
       "action": "verification",
       "schema_status": "valid",
-      "detail": "5 issues; 2 high/critical",
+      "detail": "5 issues; 2 high/critical; teacher_review_required=True",
       "repair_action": ""
     }
   ],
@@ -81,7 +81,8 @@
     "content_knowledge": "valid",
     "pedagogy_design": "valid",
     "technology_affordance": "valid",
-    "tpack_integration": "valid"
+    "tpack_integration": "valid",
+    "ethical_verification": "valid"
   },
   "conflict_set": [
     {
@@ -92,46 +93,57 @@
   ],
   "verification_issues": [
     {
-      "category": "privacy",
+      "issue_category": "privacy",
       "severity": "low",
-      "repair_agent": "none",
-      "teacher_action": "No student data entered; ok."
+      "evidence": "The design request contains no student personal data and confines AI use to teacher-facing planning.",
+      "repair_agent": "ethical_verification",
+      "teacher_action": "Confirm that no student personal data are entered during enactment."
     },
     {
-      "category": "hallucination_risk",
+      "issue_category": "hallucination",
       "severity": "medium",
+      "evidence": "AI-drafted interpretations may contain unsupported claims unless checked against the source passage.",
       "repair_agent": "content_knowledge",
       "teacher_action": "Verify AI-drafted interpretations against the text."
     },
     {
-      "category": "over_reliance",
+      "issue_category": "over_reliance",
       "severity": "medium",
+      "evidence": "AI-generated explanations could be copied into teacher talk without independent pedagogical review.",
       "repair_agent": "technology_affordance",
       "teacher_action": "Do not copy AI explanations into teacher talk verbatim."
     },
     {
-      "category": "unverified_interpretation",
+      "issue_category": "hallucination",
       "severity": "high",
+      "evidence": "Unverified text interpretation remains unresolved because the controller does not have the actual textbook passage.",
       "repair_agent": "content_knowledge",
       "teacher_action": "Complete a Text Verification Record before enactment."
     },
     {
-      "category": "weak_learner_adaptation",
+      "issue_category": "oversight",
       "severity": "high",
+      "evidence": "Weak learner adaptation remains unresolved because the controller cannot verify scaffold fit without the actual learner profile.",
       "repair_agent": "pedagogy_design",
       "teacher_action": "Calibrate scaffolds to the actual learner profile."
     }
   ],
   "teacher_oversight_flags": [
     {
-      "category": "unverified_interpretation",
+      "issue_category": "hallucination",
+      "evidence": "Unverified text interpretation remains unresolved because the controller does not have the actual textbook passage.",
+      "repair_agent": "content_knowledge",
       "teacher_action": "Complete a Text Verification Record before enactment."
     },
     {
-      "category": "weak_learner_adaptation",
+      "issue_category": "oversight",
+      "evidence": "Weak learner adaptation remains unresolved because the controller cannot verify scaffold fit without the actual learner profile.",
+      "repair_agent": "pedagogy_design",
       "teacher_action": "Calibrate scaffolds to the actual learner profile."
     }
   ],
-  "verification_status": "human_review_required",
-  "total_agent_calls": 6
+  "teacher_review_required": true,
+  "total_agent_calls": 6,
+  "routing_agent_calls": 5,
+  "verification_agent_calls": 1
 }
