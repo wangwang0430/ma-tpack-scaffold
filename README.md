@@ -2,23 +2,25 @@
 
 Supplementary material for:
 
-> **MA-TPACK Scaffold: Architecture and Reference Implementation
-> for GenAI-Supported Lesson Planning**
+> **MA-TPACK Scaffold: A Multi-Agent Prompt-Orchestration Architecture and Reference Implementation for GenAI-Supported Lesson Planning**
 > Zhangnan Wang, Xuanyi Zhao, Fang Zhao
-> AIFE 2026 (3rd International Conference on Artificial Intelligence
-> and Future Education), Tokyo, Japan
+> AIFE 2026 (3rd International Conference on Artificial Intelligence and Future Education), Japan
 
 ---
 
 ## What this is
 
-This repository contains the reference implementation of the
-MA-TPACK Scaffold orchestrator described in the paper. The
-implementation demonstrates that the two prompt-orchestration
-procedures (TPACK-oriented routing and ethical verification)
-execute as specified, producing a program-generated TraceLog
-with schema validation, conflict detection, repair re-routing,
-and ethical-verification flags.
+This repository contains the reference implementation of the MA-TPACK Scaffold orchestrator described in the paper. The implementation demonstrates that the two prompt-orchestration procedures (TPACK-oriented routing and ethical verification) execute as specified, producing a program-generated TraceLog with schema validation, conflict detection, repair re-routing, and ethical-verification flags.
+
+The ethical-verification objects follow the final paper's Listing 1. Each issue contains:
+
+- `issue_category`
+- `severity`
+- `evidence`
+- `repair_agent`
+- `teacher_action`
+
+The report-level human-review field is the Boolean `teacher_review_required`.
 
 ---
 
@@ -26,7 +28,7 @@ and ethical-verification flags.
 
 | File | Description |
 |------|-------------|
-| `schemas.py` | JSON Schema definitions for DesignState, agent outputs, VerificationReport |
+| `schemas.py` | JSON Schema definitions for agent outputs and the paper-aligned VerificationReport |
 | `agents.py` | Pluggable agent backend: StubBackend (offline) and DeepSeekBackend (live API) |
 | `orchestrator.py` | Core controller implementing Procedure 1 (routing) and Procedure 2 (verification) |
 | `run_grade9.py` | Runner for the Grade 9 English reading lesson-planning case |
@@ -62,25 +64,20 @@ python run_grade9.py --deepseek
 
 ## What the output shows
 
-The clean run completes in **6 agent calls**:
+The clean end-to-end run completes in **6 agent calls**: **5 calls in the routing phase** (including one targeted Pedagogy Design repair) followed by **1 Ethical Verification call**.
 
 - T0: orchestrator normalizes input → DesignState initialized
 - T1–T3: CK / PK / TK agents write schema-valid outputs
 - T4: TPACK Integration detects a timing conflict → repair routed to Pedagogy Design
 - T5: Pedagogy Design returns revised sequence → conflict reduced
-- T6: Ethical Verification produces 5 issues; 2 high-severity items
-  carried as human-review flags → status: `human_review_required`
+- T6: Ethical Verification produces 5 issues; 2 high-severity context-dependent items remain visible as human-review flags → `teacher_review_required: true`
 
-The `--fault` run adds a T2 schema failure (missing required field)
-and shows automatic re-queue and repair before continuing.
+The two unresolved high-severity concerns in the worked example are an **unverified text interpretation** and **weak learner adaptation**. They are represented in the `evidence` field of paper-defined issue categories rather than introduced as extra category values.
+
+The `--fault` run adds a schema failure (missing required field) and shows automatic re-queue and repair before continuing.
 
 ---
 
 ## Claim boundary
 
-This implementation demonstrates **execution feasibility**:
-schema validation, conflict re-routing, and trace generation
-in one lesson-planning case. It does not establish system-level
-effectiveness, robustness, or generalizability across cases.
-Deployed-system evaluation against single-prompt and
-structured-template baselines is reserved for future work.
+This implementation demonstrates **execution feasibility**: schema validation, conflict re-routing, and trace generation in one lesson-planning case. It does not establish system-level effectiveness, robustness, or generalizability across cases. Deployed-system evaluation against single-prompt and structured-template baselines is reserved for future work.
