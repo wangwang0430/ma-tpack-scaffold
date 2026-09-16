@@ -6,22 +6,21 @@ Implements the two procedures specified in the paper:
   Procedure 1: TPACK-Oriented Prompt Routing  (routing phase)
   Procedure 2: Ethical Verification and Revision  (verification phase)
 
-The orchestrator owns ALL coordination logic — DesignState management, TPACK
+The orchestrator owns all coordination logic — DesignState management, TPACK
 profiling, agent-queue routing, schema validation, conflict detection, repair
 routing, and TraceLog emission. Agents only generate content (via AgentBackend).
-This is the "actual computer technology content" of the architecture: a
-deterministic, auditable controller over a shared blackboard state.
 """
 
 from __future__ import annotations
 import json
 from dataclasses import dataclass, field, asdict
-from typing import Any, Optional
+from typing import Optional
 
 from jsonschema import validate as js_validate, ValidationError
 
 from schemas import (
-    AGENT_OUTPUT_SCHEMA, REQUIRED_FIELDS,
+    AGENT_OUTPUT_SCHEMA,
+    REQUIRED_FIELDS,
     VERIFICATION_REPORT_SCHEMA,
 )
 from agents import AgentBackend
@@ -64,15 +63,21 @@ class Orchestrator:
 
     # ---- schema validation -------------------------------------------------
     def _validate_agent_output(self, agent_id: str, output: dict) -> tuple[bool, str]:
-        # 1. structural schema
         try:
             js_validate(instance=output, schema=AGENT_OUTPUT_SCHEMA)
         except ValidationError as e:
             return False, f"structural schema error: {e.message}"
-        # 2. required-fields completeness
-        missing = [k for k in REQUIRED_FIELDS.get(agent_id, [])
-                   if k not in output.get("fields", {})
-                   or output["fields"][k] in (None, "", [], {})]
+
+        fields = output.get("fields", {})
+        missing = []
+        for key in REQUIRED_FIELDS.get(agent_id, []):
+            if key not in fields:
+                missing.append(key)
+                continue
+            value = fields[key]
+            # Boolean False is a valid value for teacher_review_required.
+            if value is None or value == "" or value == [] or value == {}:
+                missing.append(key)
         if missing:
             return False, f"missing required fields: {missing}"
         return True, "valid"
@@ -86,13 +91,22 @@ class Orchestrator:
             "tpack_integration": "integrated_lesson_artifact",
             "ethical_verification": "ethical_risk_check",
         }
+        system_prompt = (
+            f"You are the {agent_id} agent in MA-TPACK Scaffold. "
+            "Return JSON with keys: agent_id, prompt_role, tpack_dimension, fields."
+        )
+        if agent_id == "ethical_verification":
+            system_prompt += (
+                " In fields, return issues and teacher_review_required. Each issue must "
+                "contain issue_category, severity, evidence, repair_agent, and teacher_action. "
+                "Allowed issue_category values are privacy, bias, hallucination, transparency, "
+                "over_reliance, age_appropriateness, assessment_fairness, and oversight."
+            )
         return {
             "agent_id": agent_id,
             "prompt_role": roles[agent_id],
             "required_schema": REQUIRED_FIELDS.get(agent_id, []),
-            "system_prompt": f"You are the {agent_id} agent in MA-TPACK Scaffold. "
-                             f"Return JSON with keys: agent_id, prompt_role, "
-                             f"tpack_dimension, fields.",
+            "system_prompt": system_prompt,
             "user_prompt": json.dumps(self.state.normalized_input, ensure_ascii=False),
         }
 
@@ -101,29 +115,37 @@ class Orchestrator:
         conflicts = []
         ti = self.state.agent_outputs.get("tpack_integration")
         if ti:
-            for c in ti["fields"].get("conflicts", []):
-                conflicts.append(c)
+            for conflict in ti["fields"].get("conflicts", []):
+                conflicts.append(conflict)
         return conflicts
 
     # ======================================================================
     # Procedure 1: TPACK-Oriented Prompt Routing
     # ======================================================================
     def route(self, design_request: dict) -> Optional[dict]:
-        # Step 1-2: normalize request into DesignState
         self.state.normalized_input = dict(design_request)
-        self.trace.append(TraceEntry("T0", "orchestrator", "normalize_input",
-                                     "valid", json.dumps(design_request, ensure_ascii=False)))
+        self.trace.append(
+            TraceEntry(
+                "T0",
+                "orchestrator",
+                "normalize_input",
+                "valid",
+                json.dumps(design_request, ensure_ascii=False),
+            )
+        )
 
-        # Step 3: derive TPACK profile
-        self.state.tpack_profile = ["CK", "PK", "TK", "TCK", "TPK",
-                                    "integrated_TPACK", "ethical_risk"]
+        self.state.tpack_profile = [
+            "CK", "PK", "TK", "TCK", "TPK", "integrated_TPACK", "ethical_risk"
+        ]
 
-        # Step 4: build agent queue from profile + dependencies
-        queue = ["content_knowledge", "pedagogy_design",
-                 "technology_affordance", "tpack_integration"]
+        queue = [
+            "content_knowledge",
+            "pedagogy_design",
+            "technology_affordance",
+            "tpack_integration",
+        ]
 
         step_n = 1
-        # Step 5-8: dispatch loop with schema validation + conflict reroute
         while queue and self.call_count < self.max_agent_calls:
             agent_id = queue.pop(0)
             pkg = self._build_prompt_package(agent_id)
@@ -134,91 +156,121 @@ class Orchestrator:
             self.state.schema_validation_status[agent_id] = msg
 
             if not ok:
-                # schema-repair routing: re-queue the same agent once
-                self.trace.append(TraceEntry(
-                    f"T{step_n}", agent_id, "agent_call",
-                    "INVALID", msg,
-                    repair_action=f"schema-repair: re-queue {agent_id}"))
+                self.trace.append(
+                    TraceEntry(
+                        f"T{step_n}",
+                        agent_id,
+                        "agent_call",
+                        "INVALID",
+                        msg,
+                        repair_action=f"schema-repair: re-queue {agent_id}",
+                    )
+                )
                 queue.insert(0, agent_id)
                 step_n += 1
                 continue
 
             self.state.agent_outputs[agent_id] = output
 
-            # conflict detection after integration agent writes
             conflicts = self._detect_conflicts()
             new_conflicts = [c for c in conflicts if c not in self.state.conflict_set]
             if new_conflicts:
                 self.state.conflict_set.extend(new_conflicts)
-                for c in new_conflicts:
-                    repair_agent = c.get("repair_agent")
+                for conflict in new_conflicts:
+                    repair_agent = conflict.get("repair_agent")
                     if repair_agent and repair_agent not in queue:
                         queue.append(repair_agent)
-                    self.trace.append(TraceEntry(
-                        f"T{step_n}", agent_id, "agent_call",
-                        "valid_with_conflict", c["detail"],
-                        repair_action=f"conflict reroute -> {repair_agent}"))
+                    self.trace.append(
+                        TraceEntry(
+                            f"T{step_n}",
+                            agent_id,
+                            "agent_call",
+                            "valid_with_conflict",
+                            conflict["detail"],
+                            repair_action=f"conflict reroute -> {repair_agent}",
+                        )
+                    )
             else:
-                self.trace.append(TraceEntry(
-                    f"T{step_n}", agent_id, "agent_call", "valid",
-                    f"{agent_id} output accepted"))
+                self.trace.append(
+                    TraceEntry(
+                        f"T{step_n}",
+                        agent_id,
+                        "agent_call",
+                        "valid",
+                        f"{agent_id} output accepted",
+                    )
+                )
             step_n += 1
 
-        # Step 9: synthesize draft LessonArtifact if core fields valid
-        core = ["content_knowledge", "pedagogy_design",
-                "technology_affordance", "tpack_integration"]
-        if all(a in self.state.agent_outputs for a in core):
-            artifact = {a: self.state.agent_outputs[a]["fields"] for a in core}
-            return artifact
+        core = [
+            "content_knowledge",
+            "pedagogy_design",
+            "technology_affordance",
+            "tpack_integration",
+        ]
+        if all(agent in self.state.agent_outputs for agent in core):
+            return {agent: self.state.agent_outputs[agent]["fields"] for agent in core}
         return None
 
     # ======================================================================
     # Procedure 2: Ethical Verification and Revision
     # ======================================================================
     def verify(self, artifact: dict) -> dict:
-        rounds = 0
-        report = None
-        step_n = len(self.trace)
-        while rounds < self.max_revision_rounds:
-            pkg = self._build_prompt_package("ethical_verification")
-            report = self.backend.run("ethical_verification", pkg)
-            self.call_count += 1
+        # The worked example performs one verification call after the five-call
+        # routing phase. Context-dependent high-severity issues that cannot be
+        # repaired without the actual text/learner profile are surfaced for
+        # teacher review, matching the final paper's claim boundary.
+        pkg = self._build_prompt_package("ethical_verification")
+        report = self.backend.run("ethical_verification", pkg)
+        self.call_count += 1
 
-            # validate the verification report against its schema
-            try:
-                js_validate(instance=report["fields"], schema=VERIFICATION_REPORT_SCHEMA)
-                schema_status = "valid"
-            except ValidationError as e:
-                schema_status = f"INVALID: {e.message}"
+        try:
+            js_validate(instance=report["fields"], schema=VERIFICATION_REPORT_SCHEMA)
+            schema_status = "valid"
+            self.state.schema_validation_status["ethical_verification"] = "valid"
+        except ValidationError as e:
+            schema_status = f"INVALID: {e.message}"
+            self.state.schema_validation_status["ethical_verification"] = schema_status
 
-            issues = report["fields"]["issues"]
-            self.state.verification_issues = issues
-            highs = [i for i in issues if i["severity"] in ("high", "critical")]
+        issues = report["fields"].get("issues", [])
+        self.state.verification_issues = issues
+        highs = [i for i in issues if i.get("severity") in ("high", "critical")]
 
-            self.trace.append(TraceEntry(
-                f"T{step_n}", "ethical_verification", "verification",
-                schema_status,
-                f"{len(issues)} issues; {len(highs)} high/critical"))
-            step_n += 1
+        # The final report-level Boolean is derived from unresolved high/critical
+        # issues. This is the exact field defined by Listing 1 in the paper.
+        teacher_review_required = bool(highs)
+        report["fields"]["teacher_review_required"] = teacher_review_required
 
-            if not highs:
-                self.state.teacher_oversight_flags = []
-                report["fields"]["verification_status"] = "approved_with_teacher_oversight_notes"
-                break
-
-            # high/critical issues -> carry as human-review flags (no auto-fix
-            # for context-dependent items) and stop, mirroring the paper.
+        if teacher_review_required:
             self.state.teacher_oversight_flags = [
-                {"category": i["category"], "teacher_action": i["teacher_action"]}
-                for i in highs
+                {
+                    "issue_category": issue["issue_category"],
+                    "evidence": issue["evidence"],
+                    "repair_agent": issue["repair_agent"],
+                    "teacher_action": issue["teacher_action"],
+                }
+                for issue in highs
             ]
-            self.state.revision_history.append({"round": rounds + 1, "high_issues": highs})
-            report["fields"]["verification_status"] = "human_review_required"
-            rounds += 1
-            break  # context-dependent highs require human review, not auto-loop
+            self.state.revision_history.append(
+                {"round": 1, "unresolved_high_issues": highs}
+            )
+        else:
+            self.state.teacher_oversight_flags = []
+
+        step_n = len(self.trace)
+        self.trace.append(
+            TraceEntry(
+                f"T{step_n}",
+                "ethical_verification",
+                "verification",
+                schema_status,
+                f"{len(issues)} issues; {len(highs)} high/critical; "
+                f"teacher_review_required={teacher_review_required}",
+            )
+        )
 
         return report
 
     # ---- export ------------------------------------------------------------
     def tracelog(self) -> list[dict]:
-        return [asdict(t) for t in self.trace]
+        return [asdict(entry) for entry in self.trace]
