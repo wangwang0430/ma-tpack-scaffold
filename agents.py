@@ -4,18 +4,17 @@ agents.py — Pluggable agent backend for MA-TPACK Scaffold.
 The orchestrator calls agents through a single interface, AgentBackend.run(...).
 Two implementations are provided:
 
-  * StubBackend   — deterministic offline responses mirroring the manual trace
-                    reported in the paper (Table 6/7). Lets the full
-                    orchestration pipeline run, validate, detect conflicts, and
-                    log WITHOUT network access, so the architecture's behavior
-                    is reproducible and testable.
+  * StubBackend   — deterministic offline responses mirroring the execution
+                    trace reported in the paper. Lets the full orchestration
+                    pipeline run, validate, detect conflicts, and log WITHOUT
+                    network access, so the architecture's behavior is
+                    reproducible and testable.
 
   * DeepSeekBackend — real LLM calls via the DeepSeek API. Swap this in by
                     setting DEEPSEEK_API_KEY; the orchestration logic is
-                    unchanged. This demonstrates that the manual trace and the
-                    automated trace share the same controller.
+                    unchanged.
 
-Only the *content generation* step differs between backends. Routing, schema
+Only the content-generation step differs between backends. Routing, schema
 validation, conflict detection, repair routing, and logging are all performed
 by the orchestrator and are identical in both modes.
 """
@@ -23,7 +22,6 @@ by the orchestrator and are identical in both modes.
 from __future__ import annotations
 import os
 import json
-from typing import Any
 
 
 class AgentBackend:
@@ -32,14 +30,13 @@ class AgentBackend:
 
 
 # ----------------------------------------------------------------------------
-# Deterministic offline backend (mirrors the paper's manual instantiation)
+# Deterministic offline backend (mirrors the paper's worked example)
 # ----------------------------------------------------------------------------
 class StubBackend(AgentBackend):
     """Returns fixed, schema-shaped outputs for the Grade 9 reading case.
 
-    `inject_fault` lets us deliberately produce a schema-invalid Pedagogy
-    output on the first call to demonstrate that the orchestrator detects the
-    failure and routes a schema-repair request (evidence of real validation).
+    `inject_fault` deliberately produces a schema-invalid Pedagogy output on
+    the first call, demonstrating schema-failure detection and repair routing.
     """
 
     def __init__(self, inject_fault: bool = False):
@@ -67,8 +64,6 @@ class StubBackend(AgentBackend):
 
     def _pedagogy_design(self, p):
         self._pedagogy_calls += 1
-        # First call optionally returns an incomplete output (missing
-        # 'formative_checks') to trigger schema-repair routing.
         if self.inject_fault and self._pedagogy_calls == 1:
             return {
                 "agent_id": "pedagogy_design",
@@ -112,7 +107,6 @@ class StubBackend(AgentBackend):
         }
 
     def _tpack_integration(self, p):
-        # Surfaces the timing conflict, mirroring T4 in the paper's trace.
         return {
             "agent_id": "tpack_integration",
             "prompt_role": p["prompt_role"],
@@ -134,28 +128,54 @@ class StubBackend(AgentBackend):
         }
 
     def _ethical_verification(self, p):
+        # The issue objects follow Listing 1 in the final paper exactly:
+        # issue_category, severity, evidence, repair_agent, teacher_action.
+        # Context-specific concerns such as an unverified interpretation and
+        # weak learner adaptation are represented in evidence while keeping
+        # issue_category within the paper-defined enumeration.
         return {
             "agent_id": "ethical_verification",
             "prompt_role": p["prompt_role"],
             "tpack_dimension": "ethical_risk",
             "fields": {
                 "issues": [
-                    {"category": "privacy", "severity": "low",
-                     "repair_agent": "none", "teacher_action": "No student data entered; ok."},
-                    {"category": "hallucination_risk", "severity": "medium",
-                     "repair_agent": "content_knowledge",
-                     "teacher_action": "Verify AI-drafted interpretations against the text."},
-                    {"category": "over_reliance", "severity": "medium",
-                     "repair_agent": "technology_affordance",
-                     "teacher_action": "Do not copy AI explanations into teacher talk verbatim."},
-                    {"category": "unverified_interpretation", "severity": "high",
-                     "repair_agent": "content_knowledge",
-                     "teacher_action": "Complete a Text Verification Record before enactment."},
-                    {"category": "weak_learner_adaptation", "severity": "high",
-                     "repair_agent": "pedagogy_design",
-                     "teacher_action": "Calibrate scaffolds to the actual learner profile."},
+                    {
+                        "issue_category": "privacy",
+                        "severity": "low",
+                        "evidence": "The design request contains no student personal data and confines AI use to teacher-facing planning.",
+                        "repair_agent": "ethical_verification",
+                        "teacher_action": "Confirm that no student personal data are entered during enactment.",
+                    },
+                    {
+                        "issue_category": "hallucination",
+                        "severity": "medium",
+                        "evidence": "AI-drafted interpretations may contain unsupported claims unless checked against the source passage.",
+                        "repair_agent": "content_knowledge",
+                        "teacher_action": "Verify AI-drafted interpretations against the text.",
+                    },
+                    {
+                        "issue_category": "over_reliance",
+                        "severity": "medium",
+                        "evidence": "AI-generated explanations could be copied into teacher talk without independent pedagogical review.",
+                        "repair_agent": "technology_affordance",
+                        "teacher_action": "Do not copy AI explanations into teacher talk verbatim.",
+                    },
+                    {
+                        "issue_category": "hallucination",
+                        "severity": "high",
+                        "evidence": "Unverified text interpretation remains unresolved because the controller does not have the actual textbook passage.",
+                        "repair_agent": "content_knowledge",
+                        "teacher_action": "Complete a Text Verification Record before enactment.",
+                    },
+                    {
+                        "issue_category": "oversight",
+                        "severity": "high",
+                        "evidence": "Weak learner adaptation remains unresolved because the controller cannot verify scaffold fit without the actual learner profile.",
+                        "repair_agent": "pedagogy_design",
+                        "teacher_action": "Calibrate scaffolds to the actual learner profile.",
+                    },
                 ],
-                "verification_status": "human_review_required",
+                "teacher_review_required": True,
             },
         }
 
@@ -171,7 +191,7 @@ class DeepSeekBackend(AgentBackend):
     """
 
     def __init__(self, model: str = "deepseek-chat"):
-        from openai import OpenAI  # imported lazily so offline runs don't need it
+        from openai import OpenAI
         self.client = OpenAI(
             api_key=os.environ["DEEPSEEK_API_KEY"],
             base_url="https://api.deepseek.com",
@@ -183,8 +203,10 @@ class DeepSeekBackend(AgentBackend):
         user = prompt_package["user_prompt"]
         resp = self.client.chat.completions.create(
             model=self.model,
-            messages=[{"role": "system", "content": system},
-                      {"role": "user", "content": user}],
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
             temperature=0.3,
             response_format={"type": "json_object"},
         )
